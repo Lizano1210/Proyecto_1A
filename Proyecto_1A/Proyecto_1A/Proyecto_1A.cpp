@@ -11,6 +11,7 @@ int main()
     std::cout << "Hello World4!\n";
     std::cout << "Hello pussys!\n";
     std::cout << "Hello pussys6!\n";
+    // medio tonto el mae
 
 }
 

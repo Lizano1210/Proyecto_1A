@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\lino_nk12\\source\\repos\\Proyecto_1A\\",
+  "WorkspaceRootPath": "C:\\Users\\lino_nk12\\Documents\\Proyecto_1A\\Proyecto_1A\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{71B13A9F-D8B5-42E3-AE47-17E654583266}|Proyecto_1A\\Proyecto_1A.vcxproj|C:\\Users\\lino_nk12\\source\\repos\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{71B13A9F-D8B5-42E3-AE47-17E654583266}|Proyecto_1A\\Proyecto_1A.vcxproj|C:\\Users\\lino_nk12\\Documents\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{71B13A9F-D8B5-42E3-AE47-17E654583266}|Proyecto_1A\\Proyecto_1A.vcxproj|solutionrelative:Proyecto_1A\\Proyecto_1A.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -28,9 +28,9 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "Proyecto_1A.cpp",
-              "DocumentMoniker": "C:\\Users\\lino_nk12\\source\\repos\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp",
+              "DocumentMoniker": "C:\\Users\\lino_nk12\\Documents\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp",
               "RelativeDocumentMoniker": "Proyecto_1A\\Proyecto_1A.cpp",
-              "ToolTip": "C:\\Users\\lino_nk12\\source\\repos\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp",
+              "ToolTip": "C:\\Users\\lino_nk12\\Documents\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A\\Proyecto_1A.cpp",
               "RelativeToolTip": "Proyecto_1A\\Proyecto_1A.cpp",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",

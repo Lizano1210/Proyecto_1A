@@ -18,7 +18,7 @@ const float FPS = 60;
 enum EstadoJuego { MENU, JUGANDO, GAME_OVER, STATS };
 enum Dificultad {
     DIF_EASIEST,
-    DIF_EASY,   
+    DIF_EASY,
     DIF_NORMAL,
     DIF_HARD,
     DIF_VERY_HARD,
@@ -85,6 +85,7 @@ int main() {
     ALLEGRO_FONT* font = al_create_builtin_font();
 
     al_register_event_source(queue, al_get_display_event_source(display));
+    al_register_event_source(queue, al_get_timer_event_source(timer));
     al_register_event_source(queue, al_get_keyboard_event_source());
 
     EstadoJuego estado = MENU;

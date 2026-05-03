@@ -425,6 +425,141 @@ void DestruirMissiles(Missile*& Lista)
     }
 }
 
+// =============================================================================
+//  BST DE ESTADÍSTICAS — Historial acumulativo de partidas
+//  Ordenado por score. No se permite eliminar nodos (historial permanente).
+//  Basado en funciones de laboratorio previo, adaptadas al contexto del juego.
+// =============================================================================
+
+struct NodoBST {
+    char nombre[6];   // 5 caracteres estilo arcade + '\0'
+    int disparos;
+    int aciertos;
+    int fallos;
+    int score;
+
+    NodoBST* izq;
+    NodoBST* der;
+};
+
+// -----------------------------------------------------------------------------
+//  Insertar()
+//  Agrega una nueva partida al BST ordenada por score.
+//  Scores iguales van a la derecha para permitir duplicados.
+//  Basado en Insertar() del laboratorio, adaptado para NodoBST.
+// -----------------------------------------------------------------------------
+void Insertar(NodoBST*& Raiz, char nombre[6], int disparos, int aciertos, int fallos, int score)
+{
+    if (Raiz == NULL)
+    {
+        Raiz = new NodoBST;
+        Raiz->disparos = disparos;
+        Raiz->aciertos = aciertos;
+        Raiz->fallos = fallos;
+        Raiz->score = score;
+        Raiz->izq = NULL;
+        Raiz->der = NULL;
+        // Copiar nombre carácter por carácter (sin std::string)
+        for (int i = 0; i < 6; i++) Raiz->nombre[i] = nombre[i];
+    }
+    else
+    {
+        // Scores menores van a la izquierda, mayores o iguales a la derecha
+        if (score < Raiz->score)
+            Insertar(Raiz->izq, nombre, disparos, aciertos, fallos, score);
+        else
+            Insertar(Raiz->der, nombre, disparos, aciertos, fallos, score);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//  DestruirBST()
+//  Libera toda la memoria del árbol recursivamente (post-order).
+//  Basado en PodarHojas() del laboratorio.
+//  Se llama al cerrar el programa.
+// -----------------------------------------------------------------------------
+void DestruirBST(NodoBST*& Raiz)
+{
+    if (Raiz != NULL)
+    {
+        DestruirBST(Raiz->izq);
+        DestruirBST(Raiz->der);
+        delete Raiz;
+        Raiz = NULL;
+    }
+}
+
+// -----------------------------------------------------------------------------
+//  MostrarTopScores()
+//  Recorre el árbol en order inverso (der → raiz → izq) para mostrar
+//  el ranking de mayor a menor score en pantalla con Allegro.
+// -----------------------------------------------------------------------------
+void MostrarTopScores(NodoBST* Raiz, ALLEGRO_FONT* font, int& y, int& lugar, int limite)
+{
+    if (Raiz != NULL && lugar <= limite)
+    {
+        // Primero el subárbol derecho (scores mayores)
+        MostrarTopScores(Raiz->der, font, y, lugar, limite);
+
+        if (lugar <= limite)
+        {
+            // Dibujar línea del ranking
+            al_draw_textf(font, al_map_rgb(255, 255, 0),
+                WIDTH / 2, y, ALLEGRO_ALIGN_CENTER,
+                "#%d  %s  %d pts  [D:%d A:%d F:%d]",
+                lugar, Raiz->nombre, Raiz->score,
+                Raiz->disparos, Raiz->aciertos, Raiz->fallos);
+            y += 20;
+            lugar++;
+        }
+
+        // Luego el subárbol izquierdo (scores menores)
+        MostrarTopScores(Raiz->izq, font, y, lugar, limite);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//  GuardarBST()
+//  Serializa el árbol en pre-orden al archivo "stats.bin".
+//  Pre-orden garantiza que al leer en el mismo orden se reconstruye
+//  el árbol con la misma estructura sin necesidad de rebalancear.
+// -----------------------------------------------------------------------------
+void GuardarBST(NodoBST* Raiz, FILE* archivo)
+{
+    if (Raiz != NULL)
+    {
+        // Escribir nodo actual
+        fwrite(Raiz, sizeof(NodoBST), 1, archivo);
+        fflush(archivo);  // Forzar escritura al disco inmediatamente
+
+        // Luego subárboles izquierdo y derecho
+        GuardarBST(Raiz->izq, archivo);
+        GuardarBST(Raiz->der, archivo);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//  CargarBST()
+//  Lee el archivo "stats.bin" y reconstruye el BST insertando cada nodo.
+//  Como se guardó en pre-order, insertar en el mismo orden reconstruye
+//  el árbol con la misma estructura original.
+//  Se llama una sola vez al iniciar el programa.
+// -----------------------------------------------------------------------------
+void CargarBST(NodoBST*& Raiz)
+{
+    FILE* archivo = fopen("stats.bin", "rb");
+    if (archivo == NULL) return;  // Primera ejecución, no hay historial aún
+
+    NodoBST temp;
+    // Leer nodo por nodo e insertar en el árbol
+    while (fread(&temp, sizeof(NodoBST), 1, archivo) == 1)
+    {
+        Insertar(Raiz, temp.nombre, temp.disparos,
+            temp.aciertos, temp.fallos, temp.score);
+    }
+    fclose(archivo);
+}
+
 
 int main() {
 

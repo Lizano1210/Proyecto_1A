@@ -1,4 +1,4 @@
-﻿// =============================================================================
+﻿ 
 //  PROYECTO 1A — VIDEOJUEGO XOP (Versión Preliminar)
 //  Curso: Estructuras de Datos IC2001
 //  Descripción: Réplica preliminar del bullet hell XOP usando Allegro 5.
@@ -6,7 +6,7 @@
 //               sistema de monedas (DAL Coins), estadísticas básicas y
 //               múltiples modos/dificultades. Esta versión es un prototipo
 //               funcional sobre el cual se seguirá construyendo.
-// =============================================================================
+ 
 
 // Suprime advertencias de funciones "inseguras" de MSVC (fopen, etc.)
 #define _CRT_SECURE_NO_WARNINGS
@@ -27,26 +27,29 @@
 #include <cstdio>      // fopen, fprintf, fclose — persistencia de estadísticas
 #include <cmath>       // fabs() — valor absoluto en colisiones
 
-// =============================================================================
+ 
 //  CONSTANTES GLOBALES
-// =============================================================================
+ 
 
 const int WIDTH = 800;   // Ancho de la ventana en píxeles
 const int HEIGHT = 600;   // Alto  de la ventana en píxeles
 const float FPS = 60;    // Frames (ticks de lógica) por segundo
 
-// =============================================================================
+ 
 //  ENUMERACIONES — definen los estados y tipos del juego
-// =============================================================================
+ 
 
 // Estados posibles de la máquina de estados del juego.
 // El game loop usa este valor para decidir qué lógica y qué pantalla ejecutar.
 enum EstadoJuego {
-    MENU,       // Pantalla de inicio: selección de dificultad, modo y arma
-    JUGANDO,    // Gameplay activo: lógica de movimiento, disparo y colisiones
-    GAME_OVER,  // El jugador perdió todas las vidas; se muestran opciones
-    STATS       // Pantalla informativa: indica al usuario dónde ver las estadísticas
+    MENU, 
+    JUGANDO,
+    GAME_OVER,  
+    STATS,
+    TRANSICION 
 };
+
+enum Nivel { CITY, OCEAN, VOLCANO, SPACE };
 
 // Niveles de dificultad escalonados (0 = más fácil, 7 = más difícil).
 // Cada valor indexa la tabla configs[] para obtener spawn rate, velocidad
@@ -82,9 +85,9 @@ enum Arma {
     PLASMA        // 6 — Proyectil rápido con efecto visual de destello verde
 };
 
-// =============================================================================
+ 
 //  STRUCTS — representación de entidades del juego
-// =============================================================================
+ 
 
 // Bala disparada por el jugador.
 // 'hit' evita contar fallos dobles en balas que ya impactaron.
@@ -121,24 +124,33 @@ struct Missile {
     float x, y;
     Missile* siguiente;
 };
-// =============================================================================
+
+// Jefe de nivel. Aparece al alcanzar el umbral de enemigos eliminados.
+// Tiene vida propia (varios impactos para matarlo) y patron de disparo propio.
+// Solo presente en niveles VOLCANO y SPACE.
+struct Jefe {
+    float x, y;       // Posicion en pantalla
+    float velX;       // Velocidad de movimiento lateral (zigzag)
+    int   vida;       // Impactos necesarios para destruirlo
+    int   fase;       // Fase del patron de disparo (cambia al perder vida)
+    bool  vivo;       // Estado del jefe
+    Jefe* siguiente;  // Puntero para lista enlazada
+};
+
 //  VARIABLES GLOBALES DE ESTADÍSTICAS
-//  NOTA: en la versión final estas variables alimentarán un BST dinámico
-//  con persistencia incremental en disco (fflush tras cada escritura).
-// =============================================================================
 
 int disparos = 0;  // Total de veces que el jugador presionó ESPACIO
 int aciertos = 0;  // Balas que impactaron un enemigo
 int fallos = 0;  // Balas que salieron de pantalla sin impactar
 int score = 0;  // Puntuación acumulada en la partida actual
 
-// =============================================================================
+ 
 //  guardarStats()
 //  Persiste las estadísticas de la partida actual al archivo "stats.txt"
 //  en modo append (no sobreescribe partidas anteriores).
 //  NOTA: en la versión final se reemplazará por serialización del BST
 //  con escritura incremental + fflush() para resistencia ante caídas abruptas.
-// =============================================================================
+ 
 void guardarStats() {
     FILE* file = fopen("stats.txt", "a");  // "a" = append — preserva historial
     if (file) {
@@ -148,13 +160,13 @@ void guardarStats() {
     }
 }
 
-// =============================================================================
+ 
 //  CONFIGURACIÓN DE DIFICULTAD
 //  Cada índice corresponde a un valor del enum Dificultad (0-7).
 //  spawnRate: cada cuántos ticks aparece un enemigo (menor = más rápido)
 //  velEnemigo: velocidad vertical de bajada del enemigo (px/tick)
 //  velBala:    velocidad vertical de las balas enemigas (px/tick)
-// =============================================================================
+ 
 struct ConfigDificultad { int spawnRate; float velEnemigo; float velBala; };
 
 ConfigDificultad configs[8] = {
@@ -173,21 +185,28 @@ const char* nombresDif[] = { "EASIEST","EASY","NORMAL","HARD","VERY HARD","EXTRE
 const char* nombresModo[] = { "ORIGINAL","SLUDGE","MANIAC","MASSACRE" };
 const char* nombresArma[] = { "NORMAL","BOTS","VELOCITY","SPREAD","MISSILE","IMPLOSION","PLASMA" };
 
-// =============================================================================
+ 
 //  colision(x1, y1, x2, y2, r)
 //  Detección de colisión AABB simplificada (caja cuadrada de lado 2r).
 //  Retorna true si ambos puntos están a menos de 'r' píxeles en X e Y.
 //  Se usa para: bala-enemigo, bala-jugador, jugador-moneda.
 //  NOTA: hitbox cuadrada es una aproximación; la versión final puede refinar
 //  a círculo real usando distancia euclídea.
-// =============================================================================
 bool colision(float x1, float y1, float x2, float y2, float r) {
     return (fabs(x1 - x2) < r && fabs(y1 - y2) < r);
 }
 
+// Retorna la cantidad de enemigos a eliminar para avanzar al siguiente nivel.
+// City y Ocean son mas cortos (50), Volcano y Space mas largos (64).
+int obtenerUmbral(Nivel n)
+{
+    if (n == CITY || n == OCEAN) return 50;
+    return 64;
+}
+
 //  FUNCIONES DE LISTA ENLAZADA 
 
-// ── BALA ─────────────────────────────────────────────────────────────────────
+// BALA
 
 // Inserta una nueva bala al frente de la lista.
 // Reutiliza el patrón de AgregarInicioInventario.
@@ -234,7 +253,7 @@ void DestruirBalas(Bala*& Lista)
     }
 }
 
-// ── BALA ENEMIGA ──────────────────────────────────────────────────────────────
+// BALA ENEMIGA
 // Mismo tipo Bala, lista separada para balas disparadas por enemigos.
 
 void AgregarBalaEnemiga(Bala*& Lista, Bala*& Nuevo)
@@ -273,7 +292,7 @@ void DestruirBalasEnemigas(Bala*& Lista)
     }
 }
 
-// ── ENEMIGO ───────────────────────────────────────────────────────────────────
+// ENEMIGO 
 
 void AgregarEnemigo(Enemigo*& Lista, Enemigo*& Nuevo)
 {
@@ -311,7 +330,7 @@ void DestruirEnemigos(Enemigo*& Lista)
     }
 }
 
-// ── MONEDA ────────────────────────────────────────────────────────────────────
+// MONEDA 
 
 void AgregarMoneda(Moneda*& Lista, Moneda*& Nuevo)
 {
@@ -349,7 +368,7 @@ void DestruirMonedas(Moneda*& Lista)
     }
 }
 
-// ── BOT ───────────────────────────────────────────────────────────────────────
+// ── BOT v──
 
 void AgregarBot(Bot*& Lista, Bot*& Nuevo)
 {
@@ -387,7 +406,7 @@ void DestruirBots(Bot*& Lista)
     }
 }
 
-// ── MISSILE ───────────────────────────────────────────────────────────────────
+// MISSILE
 
 void AgregarMissile(Missile*& Lista, Missile*& Nuevo)
 {
@@ -425,11 +444,49 @@ void DestruirMissiles(Missile*& Lista)
     }
 }
 
-// =============================================================================
+// JEFE
+
+void AgregarJefe(Jefe*& Lista, Jefe*& Nuevo)
+{
+    Nuevo->siguiente = Lista;
+    Lista = Nuevo;
+}
+
+void EliminarJefe(Jefe*& Lista, Jefe* nodo)
+{
+    if (Lista == NULL) return;
+
+    if (Lista == nodo) {
+        Lista = Lista->siguiente;
+        delete nodo;
+        return;
+    }
+
+    Jefe* Aux = Lista;
+    while (Aux->siguiente != NULL && Aux->siguiente != nodo)
+        Aux = Aux->siguiente;
+
+    if (Aux->siguiente == nodo) {
+        Aux->siguiente = nodo->siguiente;
+        delete nodo;
+    }
+}
+
+void DestruirJefes(Jefe*& Lista)
+{
+    Jefe* Aux = Lista;
+    while (Aux != NULL) {
+        Lista = Lista->siguiente;
+        delete Aux;
+        Aux = Lista;
+    }
+}
+
+ 
 //  BST DE ESTADÍSTICAS — Historial acumulativo de partidas
 //  Ordenado por score. No se permite eliminar nodos (historial permanente).
 //  Basado en funciones de laboratorio previo, adaptadas al contexto del juego.
-// =============================================================================
+ 
 
 struct NodoBST {
     char nombre[6];   // 5 caracteres estilo arcade + '\0'
@@ -442,12 +499,11 @@ struct NodoBST {
     NodoBST* der;
 };
 
-// -----------------------------------------------------------------------------
+ 
 //  Insertar()
 //  Agrega una nueva partida al BST ordenada por score.
 //  Scores iguales van a la derecha para permitir duplicados.
 //  Basado en Insertar() del laboratorio, adaptado para NodoBST.
-// -----------------------------------------------------------------------------
 void Insertar(NodoBST*& Raiz, char nombre[6], int disparos, int aciertos, int fallos, int score)
 {
     if (Raiz == NULL)
@@ -472,12 +528,11 @@ void Insertar(NodoBST*& Raiz, char nombre[6], int disparos, int aciertos, int fa
     }
 }
 
-// -----------------------------------------------------------------------------
+ 
 //  DestruirBST()
 //  Libera toda la memoria del árbol recursivamente (post-order).
 //  Basado en PodarHojas() del laboratorio.
 //  Se llama al cerrar el programa.
-// -----------------------------------------------------------------------------
 void DestruirBST(NodoBST*& Raiz)
 {
     if (Raiz != NULL)
@@ -489,11 +544,10 @@ void DestruirBST(NodoBST*& Raiz)
     }
 }
 
-// -----------------------------------------------------------------------------
+ 
 //  MostrarTopScores()
 //  Recorre el árbol en order inverso (der → raiz → izq) para mostrar
 //  el ranking de mayor a menor score en pantalla con Allegro.
-// -----------------------------------------------------------------------------
 void MostrarTopScores(NodoBST* Raiz, ALLEGRO_FONT* font, int& y, int& lugar, int limite)
 {
     if (Raiz != NULL && lugar <= limite)
@@ -518,12 +572,11 @@ void MostrarTopScores(NodoBST* Raiz, ALLEGRO_FONT* font, int& y, int& lugar, int
     }
 }
 
-// -----------------------------------------------------------------------------
+ 
 //  GuardarBST()
 //  Serializa el árbol en pre-orden al archivo "stats.bin".
 //  Pre-orden garantiza que al leer en el mismo orden se reconstruye
 //  el árbol con la misma estructura sin necesidad de rebalancear.
-// -----------------------------------------------------------------------------
 void GuardarBST(NodoBST* Raiz, FILE* archivo)
 {
     if (Raiz != NULL)
@@ -538,13 +591,12 @@ void GuardarBST(NodoBST* Raiz, FILE* archivo)
     }
 }
 
-// -----------------------------------------------------------------------------
+ 
 //  CargarBST()
 //  Lee el archivo "stats.bin" y reconstruye el BST insertando cada nodo.
 //  Como se guardó en pre-order, insertar en el mismo orden reconstruye
 //  el árbol con la misma estructura original.
 //  Se llama una sola vez al iniciar el programa.
-// -----------------------------------------------------------------------------
 void CargarBST(NodoBST*& Raiz)
 {
     FILE* archivo = fopen("stats.bin", "rb");
@@ -564,22 +616,18 @@ void CargarBST(NodoBST*& Raiz)
 int main() {
 
     // ── 1. Inicialización de Allegro y addons ─────────────────────────────────
-    al_init(); // Núcleo de Allegro (obligatorio primero)
-    al_install_keyboard(); // Habilita eventos de teclado
-    al_init_primitives_addon(); // Habilita dibujo de formas (círculos, rectángulos)
-    al_init_font_addon(); // Habilita sistema de fuentes
-    al_init_ttf_addon(); // Habilita fuentes TrueType (.ttf)
+    al_init();                    // Núcleo de Allegro (obligatorio primero)
+    al_install_keyboard();        // Habilita eventos de teclado
+    al_init_primitives_addon();   // Habilita dibujo de formas (círculos, rectángulos)
+    al_init_font_addon();         // Habilita sistema de fuentes
+    al_init_ttf_addon();          // Habilita fuentes TrueType (.ttf)
 
     // ── 2. Creación de recursos Allegro ───────────────────────────────────────
     ALLEGRO_DISPLAY* display = al_create_display(WIDTH, HEIGHT);
-    // Timer que dispara un evento cada 1/60 segundos → 60 UPS (updates per second)
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / FPS);
-    // Cola de eventos central: aquí llegan inputs de teclado, timer y cierre de ventana
     ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
-    // Fuente built-in de Allegro (no requiere archivo externo)
     ALLEGRO_FONT* font = al_create_builtin_font();
 
-    // Registrar fuentes de eventos en la cola
     al_register_event_source(queue, al_get_display_event_source(display));
     al_register_event_source(queue, al_get_timer_event_source(timer));
     al_register_event_source(queue, al_get_keyboard_event_source());
@@ -593,135 +641,284 @@ int main() {
     // Posición inicial del jugador: centrado horizontalmente, cerca del fondo
     Jugador jugador = { WIDTH / 2, HEIGHT - 50, 5, 3 };
 
-    // Cabezas de las listas enlazadas de entidades activas.
-    // NULL representa lista vacía (equivalente al vector vacío anterior).
-    Bala* balas = NULL;  // Proyectiles del jugador
-    Bala* balasEnemigas = NULL;  // Proyectiles disparados por enemigos
-    Enemigo* enemigos = NULL;  // Naves enemigas activas
-    Moneda* monedas = NULL;  // DAL Coins en pantalla
-    Bot* bots = NULL;  // Drones del arma BOTS
-    Missile* misiles = NULL;  // Misiles del arma MISSILE
+    // ── Nombre del jugador estilo arcade (5 caracteres) ───────────────────────
+    char nombreJugador[6] = "AAA";
+    bool editandoNombre = false;
+    int  letraNombre = 0;
 
-    ALLEGRO_KEYBOARD_STATE keystate; // Estado del teclado para lectura continua 
-    srand(time(NULL)); // Semilla aleatoria basada en tiempo del sistema
-    al_start_timer(timer); // Inicia el timer → comienzan los eventos de tick
+    // ── BST de estadísticas ───────────────────────────────────────────────────
+    NodoBST* raizBST = NULL;
+    CargarBST(raizBST);
 
-    bool running = true;  // Control del game loop principal
-    bool redraw = true;  // Bandera: ¿hay que redibujar este frame?
+    // ── Listas enlazadas de entidades ─────────────────────────────────────────
+    Bala* balas = NULL;
+    Bala* balasEnemigas = NULL;
+    Enemigo* enemigos = NULL;
+    Moneda* monedas = NULL;
+    Bot* bots = NULL;
+    Missile* misiles = NULL;
+    Jefe* jefes = NULL;
+
+    // ── Sistema de niveles ────────────────────────────────────────────────────
+    // nivelActual: nivel en curso en modo arcade
+    // enemigosEliminados: contador de enemigos derrotados en el nivel actual
+    // umbralNivel: cantidad de enemigos a eliminar para avanzar (50 o 64)
+    // jefePendiente: al alcanzar el umbral en niveles 3 y 4, se activa
+    // jefeVivo: hay un jefe actualmente en pantalla
+    // tickTransicion: contador de ticks para la pantalla de transición entre niveles
+    Nivel nivelActual = CITY;
+    int   enemigosEliminados = 0;
+    int   umbralNivel = obtenerUmbral(CITY);
+    bool  jefePendiente = false;
+    bool  jefeVivo = false;
+    int   tickTransicion = 0;  // Cuenta ticks en estado TRANSICION
+
+    // ── Dev menu ──────────────────────────────────────────────────────────────
+    // Cheats activables con CTRL+I (invencibilidad) y CTRL+F (fast kill)
+    // Solo funcionan durante el estado JUGANDO.
+    bool cheatInvencible = false;  // Los golpes suman vida en vez de restarla
+    bool cheatFastKill = false;  // Cada enemigo cuenta como 10 eliminados
+
+    ALLEGRO_KEYBOARD_STATE keystate;
+    srand(time(NULL));
+    al_start_timer(timer);
+
+    bool running = true;
+    bool redraw = true;
 
     // =========================================================================
     //  GAME LOOP PRINCIPAL — arquitectura Cola de Eventos Allegro 5
-    //  Patrón: al_wait_for_event bloquea hasta que hay un evento disponible.
-    //  Los eventos de TIMER marcan los ticks de lógica (60/s).
-    //  El renderizado solo ocurre cuando redraw=true Y la cola está vacía,
-    //  evitando dibujar frames intermedios innecesarios.
     // =========================================================================
     while (running) {
         ALLEGRO_EVENT ev;
-        al_wait_for_event(queue, &ev); // Bloquea hasta recibir un evento
+        al_wait_for_event(queue, &ev);
 
-        // Cierre de ventana → terminar el loop
         if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) running = false;
-
-        // Tick del timer → habilitar redibujado y procesar lógica
-        if (ev.type == ALLEGRO_EVENT_TIMER) redraw = true;
+        if (ev.type == ALLEGRO_EVENT_TIMER)         redraw = true;
 
         // =====================================================================
         //  ESTADO: MENU
-        //  Permite al usuario configurar dificultad, modo y arma antes de jugar.
-        //  Controles: ENTER=jugar, ARRIBA/ABAJO=dificultad, IZQ/DER=modo, S=stats
+        //  ENTER=jugar (selección libre), SPACE=modo arcade, S=stats, N=nombre
+        //  ↑/↓=dificultad, ←/→=modo (solo aplican en modo selección)
         // =====================================================================
         if (estado == MENU) {
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
-                if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER) estado = JUGANDO;
+                if (editandoNombre) {
+                    // ── Edición de nombre estilo arcade ───────────────────
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_UP) {
+                        nombreJugador[letraNombre]++;
+                        if (nombreJugador[letraNombre] > 'Z') nombreJugador[letraNombre] = 'A';
+                    }
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_DOWN) {
+                        nombreJugador[letraNombre]--;
+                        if (nombreJugador[letraNombre] < 'A') nombreJugador[letraNombre] = 'Z';
+                    }
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_RIGHT && letraNombre < 4) letraNombre++;
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_LEFT && letraNombre > 0) letraNombre--;
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER) {
+                        nombreJugador[5] = '\0';
+                        editandoNombre = false;
+                        letraNombre = 0;
+                    }
+                }
+                else {
+                    // ── Controles normales del menú ────────────────────────
+                    // ENTER: modo selección libre (infinito, con dificultad elegida)
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER) {
+                        nivelActual = CITY;
+                        enemigosEliminados = 0;
+                        umbralNivel = obtenerUmbral(CITY);
+                        jefePendiente = false;
+                        jefeVivo = false;
+                        estado = JUGANDO;
+                    }
+                    // SPACE: modo arcade (4 niveles consecutivos, dificultad progresiva)
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
+                        nivelActual = CITY;
+                        enemigosEliminados = 0;
+                        umbralNivel = obtenerUmbral(CITY);
+                        jefePendiente = false;
+                        jefeVivo = false;
+                        dificultad = DIF_EASIEST;  // Arcade siempre empieza en fácil
+                        modo = ORIGINAL;     // Arcade siempre en Original
+                        estado = JUGANDO;
+                    }
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_N) editandoNombre = true;
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_S) estado = STATS;
 
-                // Ciclo de dificultad con teclas arriba/abajo
-                if (ev.keyboard.keycode == ALLEGRO_KEY_UP && dificultad < DIF_INSANE)  dificultad = (Dificultad)(dificultad + 1);
-                if (ev.keyboard.keycode == ALLEGRO_KEY_DOWN && dificultad > DIF_EASIEST) dificultad = (Dificultad)(dificultad - 1);
-
-                // Ciclo de modo de juego con teclas izquierda/derecha
-                if (ev.keyboard.keycode == ALLEGRO_KEY_RIGHT && modo < MASSACRE) modo = (ModoJuego)(modo + 1);
-                if (ev.keyboard.keycode == ALLEGRO_KEY_LEFT && modo > ORIGINAL) modo = (ModoJuego)(modo - 1);
-
-                if (ev.keyboard.keycode == ALLEGRO_KEY_S) estado = STATS;
+                    // Dificultad y modo solo en selección libre
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_UP && dificultad < DIF_INSANE)  dificultad = (Dificultad)(dificultad + 1);
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_DOWN && dificultad > DIF_EASIEST) dificultad = (Dificultad)(dificultad - 1);
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_RIGHT && modo < MASSACRE) modo = (ModoJuego)(modo + 1);
+                    if (ev.keyboard.keycode == ALLEGRO_KEY_LEFT && modo > ORIGINAL) modo = (ModoJuego)(modo - 1);
+                }
             }
         }
 
         // =====================================================================
         //  ESTADO: JUGANDO
-        //  Contiene toda la lógica de gameplay:
-        //    - Movimiento del jugador (polling continuo de teclado)
-        //    - Spawn de enemigos según dificultad y modo
-        //    - Movimiento de todas las entidades
-        //    - Detección y resolución de colisiones
-        //    - Lógica especial de armas (Implosion, Velocity)
-        //    - Recolección de monedas
-        //    - Conteo de fallos y limpieza de entidades fuera de pantalla
-        //    - Transición a GAME_OVER al perder todas las vidas
         // =====================================================================
         else if (estado == JUGANDO) {
 
-            // Obtener config de dificultad actual
             ConfigDificultad cfg = configs[dificultad];
-
-            // multVel: modificador de velocidad según modo de juego
-            // SLUDGE=0.5× (lento), MANIAC=1.5× (rápido), resto=1.0×
             float multVel = (modo == SLUDGE ? 0.5f : (modo == MANIAC ? 1.5f : 1.0f));
-
-            // multSpawn: MASSACRE duplica la cantidad de enemigos por tick de spawn
             int   multSpawn = (modo == MASSACRE ? 2 : 1);
 
             if (ev.type == ALLEGRO_EVENT_TIMER) {
 
-                // ── Movimiento del jugador (polling, no eventos) ───────────
-                // Se lee el estado completo del teclado para detectar teclas
-                // sostenidas, a diferencia de KEY_DOWN que solo detecta la pulsación inicial.
+                // ── Dev menu: CTRL+I y CTRL+F ──────────────────────────────
                 al_get_keyboard_state(&keystate);
-                if (al_key_down(&keystate, ALLEGRO_KEY_LEFT))  jugador.x -= jugador.vel;
-                if (al_key_down(&keystate, ALLEGRO_KEY_RIGHT)) jugador.x += jugador.vel;
-
-                // Clampear posición del jugador dentro de los límites de pantalla
-                jugador.x = std::max(10.f, std::min((float)WIDTH - 10, jugador.x));
-
-                // ── Spawn de enemigos ──────────────────────────────────────
-                // rand() % spawnRate == 0 da probabilidad 1/spawnRate por tick.
-                // A menor spawnRate, mayor frecuencia de aparición.
-                if (rand() % cfg.spawnRate == 0) {
-                    for (int i = 0; i < multSpawn; i++) {
-                        // Crear nodo con new y agregar al frente de la lista
-                        Enemigo* Nuevo = new Enemigo;
-                        Nuevo->x = (float)(rand() % WIDTH);
-                        Nuevo->y = 0;
-                        Nuevo->vel = cfg.velEnemigo * multVel;
-                        Nuevo->siguiente = NULL;
-                        AgregarEnemigo(enemigos, Nuevo);
+                if (al_key_down(&keystate, ALLEGRO_KEY_LCTRL) || al_key_down(&keystate, ALLEGRO_KEY_RCTRL)) {
+                    if (ev.type == ALLEGRO_EVENT_TIMER) {
+                        // Se detectan en KEY_DOWN más abajo, aquí solo se leen
                     }
                 }
 
-                // ── Movimiento de enemigos + disparo enemigo ───────────────
-                // Se recorre la lista con puntero auxiliar para poder eliminar
-                // nodos durante el recorrido sin perder el hilo de la lista.
+                // ── Movimiento del jugador ─────────────────────────────────
+                if (al_key_down(&keystate, ALLEGRO_KEY_LEFT))  jugador.x -= jugador.vel;
+                if (al_key_down(&keystate, ALLEGRO_KEY_RIGHT)) jugador.x += jugador.vel;
+                if (al_key_down(&keystate, ALLEGRO_KEY_UP))    jugador.y -= jugador.vel;
+                if (al_key_down(&keystate, ALLEGRO_KEY_DOWN))  jugador.y += jugador.vel;
+
+                jugador.x = std::max(10.f, std::min((float)WIDTH - 10, jugador.x));
+                jugador.y = std::max(HEIGHT * 0.4f, std::min((float)HEIGHT - 10, jugador.y));
+
+                // ── Spawn de enemigos ──────────────────────────────────────
+                // No spawnear si el jefe está pendiente o vivo
+                if (!jefePendiente && !jefeVivo) {
+                    if (rand() % cfg.spawnRate == 0) {
+                        for (int i = 0; i < multSpawn; i++) {
+                            Enemigo* Nuevo = new Enemigo;
+                            Nuevo->x = (float)(rand() % WIDTH);
+                            Nuevo->y = 0;
+                            Nuevo->vel = cfg.velEnemigo * multVel;
+                            Nuevo->siguiente = NULL;
+                            AgregarEnemigo(enemigos, Nuevo);
+                        }
+                    }
+                }
+
+                // ── Movimiento de enemigos + patrones de disparo por nivel ─
                 {
                     Enemigo* Aux = enemigos;
                     while (Aux != NULL) {
-                        Enemigo* Siguiente = Aux->siguiente;  // Guardar antes de posible eliminación
+                        Enemigo* Siguiente = Aux->siguiente;
+                        Aux->y += Aux->vel;
 
-                        Aux->y += Aux->vel;  // Desplazamiento vertical hacia abajo
+                        // Patrón de disparo según nivel actual
+                        if (nivelActual == CITY) {
+                            // Patrón 1: bala simple recta hacia abajo
+                            if (rand() % 100 == 0) {
+                                Bala* NuevaBala = new Bala;
+                                NuevaBala->x = Aux->x;
+                                NuevaBala->y = Aux->y;
+                                NuevaBala->vel = cfg.velBala * multVel;
+                                NuevaBala->hit = false;
+                                NuevaBala->tipo = 0;
+                                NuevaBala->siguiente = NULL;
+                                AgregarBalaEnemiga(balasEnemigas, NuevaBala);
+                            }
+                        }
+                        else if (nivelActual == OCEAN) {
+                            // Patrón 2: ráfaga de 3 balas seguidas con pequeño offset vertical
+                            if (rand() % 120 == 0) {
+                                for (int r = 0; r < 3; r++) {
+                                    Bala* NuevaBala = new Bala;
+                                    NuevaBala->x = Aux->x;
+                                    NuevaBala->y = Aux->y + r * 8;  // Offset para simular ráfaga
+                                    NuevaBala->vel = cfg.velBala * multVel * 1.2f;
+                                    NuevaBala->hit = false;
+                                    NuevaBala->tipo = 0;
+                                    NuevaBala->siguiente = NULL;
+                                    AgregarBalaEnemiga(balasEnemigas, NuevaBala);
+                                }
+                            }
+                        }
+                        else if (nivelActual == VOLCANO) {
+                            // Patrón 3: abanico de 3 balas (centro + dos diagonales)
+                            if (rand() % 80 == 0) {
+                                // Bala central recta
+                                Bala* Centro = new Bala;
+                                Centro->x = Aux->x;
+                                Centro->y = Aux->y;
+                                Centro->vel = cfg.velBala * multVel;
+                                Centro->hit = false;
+                                Centro->tipo = 4;  // tipo 4 = bala grande (renderizado especial)
+                                Centro->siguiente = NULL;
+                                AgregarBalaEnemiga(balasEnemigas, Centro);
 
-                        // Probabilidad 1/100 de disparar por enemigo por tick
-                        if (rand() % 100 == 0) {
-                            Bala* NuevaBala = new Bala;
-                            NuevaBala->x = Aux->x;
-                            NuevaBala->y = Aux->y;
-                            NuevaBala->vel = cfg.velBala * multVel;
-                            NuevaBala->hit = false;
-                            NuevaBala->tipo = 0;
-                            NuevaBala->siguiente = NULL;
-                            AgregarBalaEnemiga(balasEnemigas, NuevaBala);
+                                // Bala diagonal izquierda
+                                Bala* Izq = new Bala;
+                                Izq->x = Aux->x - 6;
+                                Izq->y = Aux->y;
+                                Izq->vel = cfg.velBala * multVel * 0.9f;
+                                Izq->hit = false;
+                                Izq->tipo = 4;
+                                Izq->siguiente = NULL;
+                                AgregarBalaEnemiga(balasEnemigas, Izq);
+
+                                // Bala diagonal derecha
+                                Bala* Der = new Bala;
+                                Der->x = Aux->x + 6;
+                                Der->y = Aux->y;
+                                Der->vel = cfg.velBala * multVel * 0.9f;
+                                Der->hit = false;
+                                Der->tipo = 4;
+                                Der->siguiente = NULL;
+                                AgregarBalaEnemiga(balasEnemigas, Der);
+                            }
+                        }
+                        else if (nivelActual == SPACE) {
+                            // Patrón 4: abanico mejorado — 5 balas, mayor velocidad y cadencia
+                            if (rand() % 60 == 0) {
+                                for (int r = -2; r <= 2; r++) {
+                                    Bala* NuevaBala = new Bala;
+                                    NuevaBala->x = Aux->x + r * 8;
+                                    NuevaBala->y = Aux->y;
+                                    NuevaBala->vel = cfg.velBala * multVel * 1.4f;
+                                    NuevaBala->hit = false;
+                                    NuevaBala->tipo = 4;
+                                    NuevaBala->siguiente = NULL;
+                                    AgregarBalaEnemiga(balasEnemigas, NuevaBala);
+                                }
+                            }
                         }
 
-                        // Eliminar enemigos que salieron por la parte inferior
                         if (Aux->y > HEIGHT) EliminarEnemigo(enemigos, Aux);
+                        Aux = Siguiente;
+                    }
+                }
+
+                // ── Movimiento del jefe ────────────────────────────────────
+                // El jefe se mueve en zigzag horizontal en la parte superior
+                // y dispara un abanico amplio cada ciertos ticks.
+                {
+                    Jefe* Aux = jefes;
+                    while (Aux != NULL) {
+                        Jefe* Siguiente = Aux->siguiente;
+
+                        // Movimiento zigzag horizontal
+                        Aux->x += Aux->velX;
+                        if (Aux->x <= 30 || Aux->x >= WIDTH - 30)
+                            Aux->velX = -Aux->velX;  // Rebotar en los bordes
+
+                        // Disparo del jefe: abanico de 5 balas cada 60 ticks
+                        // Fase 2 (mitad de vida) dispara 7 balas más rápidas
+                        int numBalas = (Aux->fase == 1 ? 5 : 7);
+                        float velBala = (Aux->fase == 1 ? 4.0f : 6.0f);
+
+                        if (rand() % 60 == 0) {
+                            for (int r = -(numBalas / 2); r <= numBalas / 2; r++) {
+                                Bala* NuevaBala = new Bala;
+                                NuevaBala->x = Aux->x + r * 12;
+                                NuevaBala->y = Aux->y + 30;
+                                NuevaBala->vel = velBala;
+                                NuevaBala->hit = false;
+                                NuevaBala->tipo = 4;
+                                NuevaBala->siguiente = NULL;
+                                AgregarBalaEnemiga(balasEnemigas, NuevaBala);
+                            }
+                        }
 
                         Aux = Siguiente;
                     }
@@ -732,9 +929,7 @@ int main() {
                     Bala* Aux = balas;
                     while (Aux != NULL) {
                         Bala* Siguiente = Aux->siguiente;
-                        Aux->y -= Aux->vel;  // Suben
-
-                        // Conteo de fallos: bala salió por arriba sin impactar
+                        Aux->y -= Aux->vel;
                         if (Aux->y < 0 && !Aux->hit) {
                             fallos++;
                             EliminarBala(balas, Aux);
@@ -748,33 +943,23 @@ int main() {
                     Bala* Aux = balasEnemigas;
                     while (Aux != NULL) {
                         Bala* Siguiente = Aux->siguiente;
-                        Aux->y += Aux->vel;  // Bajan
-
-                        // Eliminar balas que salieron por la parte inferior
+                        Aux->y += Aux->vel;
                         if (Aux->y > HEIGHT) EliminarBalaEnemiga(balasEnemigas, Aux);
-
                         Aux = Siguiente;
                     }
                 }
 
                 // ── Movimiento de misiles (homing básico) ──────────────────
-                // El misil se acerca horizontalmente al primer enemigo de la lista
-                // y sube verticalmente a velocidad fija de 3 px/tick.
                 {
                     Missile* Aux = misiles;
                     while (Aux != NULL) {
                         Missile* Siguiente = Aux->siguiente;
-
-                        // Homing: seguir al primer enemigo de la lista
                         if (enemigos != NULL) {
                             if (Aux->x < enemigos->x) Aux->x += 2;
                             if (Aux->x > enemigos->x) Aux->x -= 2;
                         }
                         Aux->y -= 3;
-
-                        // Eliminar misiles que salieron por la parte superior
                         if (Aux->y < 0) EliminarMissile(misiles, Aux);
-
                         Aux = Siguiente;
                     }
                 }
@@ -784,14 +969,12 @@ int main() {
                     Bala* AuxBala = balas;
                     while (AuxBala != NULL) {
                         Bala* SiguienteBala = AuxBala->siguiente;
-                        bool impacto = false;
+                        bool  impacto = false;
 
                         Enemigo* AuxEnemigo = enemigos;
                         while (AuxEnemigo != NULL && !impacto) {
                             Enemigo* SiguienteEnemigo = AuxEnemigo->siguiente;
-
-                            if (colision(AuxBala->x, AuxBala->y, AuxEnemigo->x, AuxEnemigo->y, 10)) {
-                                // Soltar moneda en la posición del enemigo destruido
+                            if (colision(AuxBala->x, AuxBala->y, AuxEnemigo->x, AuxEnemigo->y, 18)) {
                                 Moneda* NuevaMoneda = new Moneda;
                                 NuevaMoneda->x = AuxEnemigo->x;
                                 NuevaMoneda->y = AuxEnemigo->y;
@@ -799,11 +982,13 @@ int main() {
                                 NuevaMoneda->siguiente = NULL;
                                 AgregarMoneda(monedas, NuevaMoneda);
 
-                                // Eliminar bala y enemigo, sumar puntos
                                 EliminarEnemigo(enemigos, AuxEnemigo);
                                 EliminarBala(balas, AuxBala);
                                 score += 10;
                                 aciertos++;
+
+                                // cheatFastKill: cada enemigo cuenta como 10
+                                enemigosEliminados += (cheatFastKill ? 10 : 1);
                                 impacto = true;
                             }
                             AuxEnemigo = SiguienteEnemigo;
@@ -812,9 +997,59 @@ int main() {
                     }
                 }
 
+                // ── Colisiones: bala del jugador vs jefe ───────────────────
+                {
+                    Bala* AuxBala = balas;
+                    while (AuxBala != NULL) {
+                        Bala* SiguienteBala = AuxBala->siguiente;
+                        bool  impacto = false;
+
+                        Jefe* AuxJefe = jefes;
+                        while (AuxJefe != NULL && !impacto) {
+                            Jefe* SiguienteJefe = AuxJefe->siguiente;
+                            if (colision(AuxBala->x, AuxBala->y, AuxJefe->x, AuxJefe->y, 40)) {
+                                AuxJefe->vida--;
+                                EliminarBala(balas, AuxBala);
+                                score += 50;
+                                aciertos++;
+                                impacto = true;
+
+                                // Cambiar a fase 2 al perder la mitad de vida
+                                if (AuxJefe->vida <= 5 && AuxJefe->fase == 1)
+                                    AuxJefe->fase = 2;
+
+                                // Jefe derrotado
+                                if (AuxJefe->vida <= 0) {
+                                    score += 500;
+                                    EliminarJefe(jefes, AuxJefe);
+                                    jefeVivo = false;
+
+                                    // Avanzar al siguiente nivel
+                                    if (nivelActual == VOLCANO) {
+                                        nivelActual = SPACE;
+                                        dificultad = DIF_VERY_HARD;
+                                        umbralNivel = obtenerUmbral(SPACE);
+                                        enemigosEliminados = 0;
+                                        jefePendiente = false;
+                                        estado = TRANSICION;
+                                        tickTransicion = 0;
+                                    }
+                                    else if (nivelActual == SPACE) {
+                                        // Último nivel completado → victoria
+                                        Insertar(raizBST, nombreJugador, disparos, aciertos, fallos, score);
+                                        FILE* archivo = fopen("stats.bin", "ab");
+                                        if (archivo != NULL) { GuardarBST(raizBST, archivo); fclose(archivo); }
+                                        estado = GAME_OVER;
+                                    }
+                                }
+                            }
+                            AuxJefe = SiguienteJefe;
+                        }
+                        AuxBala = SiguienteBala;
+                    }
+                }
+
                 // ── Lógica especial: IMPLOSION ─────────────────────────────
-                // Campo de atracción gravitacional en radio de 80px.
-                // Los enemigos dentro del radio se mueven un 5% hacia el jugador por tick.
                 if (armaActual == IMPLOSION) {
                     Enemigo* Aux = enemigos;
                     while (Aux != NULL) {
@@ -831,17 +1066,12 @@ int main() {
                     Moneda* Aux = monedas;
                     while (Aux != NULL) {
                         Moneda* Siguiente = Aux->siguiente;
-                        Aux->y += 2;  // Las monedas caen hacia abajo
-
+                        Aux->y += 2;
                         if (colision(jugador.x, jugador.y, Aux->x, Aux->y, 15)) {
-                            // Recolectada: sumar puntos según tipo y eliminar
-                            score += (Aux->tipo == 0 ? 5 : 10);  // Azul=5, morada=10
+                            score += (Aux->tipo == 0 ? 5 : 10);
                             EliminarMoneda(monedas, Aux);
                         }
-                        else if (Aux->y > HEIGHT) {
-                            // Salió de pantalla sin ser recogida
-                            EliminarMoneda(monedas, Aux);
-                        }
+                        else if (Aux->y > HEIGHT) EliminarMoneda(monedas, Aux);
                         Aux = Siguiente;
                     }
                 }
@@ -852,22 +1082,77 @@ int main() {
                     while (Aux != NULL) {
                         Bala* Siguiente = Aux->siguiente;
                         if (colision(jugador.x, jugador.y, Aux->x, Aux->y, 10)) {
-                            jugador.vidas--;
+                            // cheatInvencible: los golpes suman vida en vez de restarla
+                            if (cheatInvencible) jugador.vidas++;
+                            else                 jugador.vidas--;
                             EliminarBalaEnemiga(balasEnemigas, Aux);
                         }
                         Aux = Siguiente;
                     }
                 }
 
+                // ── Progresión de nivel por enemigos eliminados ────────────
+                if (!jefePendiente && !jefeVivo && enemigosEliminados >= umbralNivel) {
+                    if (nivelActual == CITY || nivelActual == OCEAN) {
+                        // Sin jefe: transición directa al siguiente nivel
+                        if (nivelActual == CITY) {
+                            nivelActual = OCEAN;
+                            dificultad = DIF_NORMAL;
+                            umbralNivel = obtenerUmbral(OCEAN);
+                            enemigosEliminados = 0;
+                        }
+                        else {
+                            nivelActual = VOLCANO;
+                            dificultad = DIF_HARD;
+                            umbralNivel = obtenerUmbral(VOLCANO);
+                            enemigosEliminados = 0;
+                        }
+                        // Limpiar enemigos en pantalla al cambiar de nivel
+                        DestruirEnemigos(enemigos);
+                        DestruirBalasEnemigas(balasEnemigas);
+                        estado = TRANSICION;
+                        tickTransicion = 0;
+                    }
+                    else {
+                        // VOLCANO y SPACE: spawnear jefe al alcanzar el umbral
+                        jefePendiente = true;
+                        DestruirEnemigos(enemigos);  // Limpiar enemigos normales
+                        DestruirBalasEnemigas(balasEnemigas);
+
+                        Jefe* NuevoJefe = new Jefe;
+                        NuevoJefe->x = WIDTH / 2;
+                        NuevoJefe->y = 60;
+                        NuevoJefe->velX = (nivelActual == SPACE ? 3.0f : 2.0f);
+                        NuevoJefe->vida = 10;
+                        NuevoJefe->fase = 1;
+                        NuevoJefe->vivo = true;
+                        NuevoJefe->siguiente = NULL;
+                        AgregarJefe(jefes, NuevoJefe);
+                        jefePendiente = false;
+                        jefeVivo = true;
+                    }
+                }
+
                 // ── Transición a GAME_OVER ─────────────────────────────────
                 if (jugador.vidas <= 0) {
-                    guardarStats();  // Persistir estadísticas antes de cambiar estado
+                    Insertar(raizBST, nombreJugador, disparos, aciertos, fallos, score);
+                    FILE* archivo = fopen("stats.bin", "ab");
+                    if (archivo != NULL) { GuardarBST(raizBST, archivo); fclose(archivo); }
                     estado = GAME_OVER;
                 }
             }
 
-            // ── Input de disparo y cambio de arma (eventos de tecla) ──────
+            // ── Input: cheats y disparo ────────────────────────────────────
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+
+                // Dev menu: CTRL+I = invencibilidad, CTRL+F = fast kill
+                al_get_keyboard_state(&keystate);
+                bool ctrl = al_key_down(&keystate, ALLEGRO_KEY_LCTRL) ||
+                    al_key_down(&keystate, ALLEGRO_KEY_RCTRL);
+                if (ctrl && ev.keyboard.keycode == ALLEGRO_KEY_I)
+                    cheatInvencible = !cheatInvencible;
+                if (ctrl && ev.keyboard.keycode == ALLEGRO_KEY_F)
+                    cheatFastKill = !cheatFastKill;
 
                 // Teclas 0-6: selección de arma secundaria
                 if (ev.keyboard.keycode == ALLEGRO_KEY_0) armaActual = ARMA_NORMAL;
@@ -878,13 +1163,10 @@ int main() {
                 if (ev.keyboard.keycode == ALLEGRO_KEY_5) armaActual = IMPLOSION;
                 if (ev.keyboard.keycode == ALLEGRO_KEY_6) armaActual = PLASMA;
 
-                // ESPACIO: disparar según el arma seleccionada
                 if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-                    disparos++;  // Contar intento de disparo
-
+                    disparos++;
                     switch (armaActual) {
                     case ARMA_NORMAL: {
-                        // Un proyectil simple hacia arriba desde la posición del jugador
                         Bala* Nueva = new Bala;
                         Nueva->x = jugador.x;
                         Nueva->y = jugador.y;
@@ -896,7 +1178,6 @@ int main() {
                         break;
                     }
                     case SPREAD: {
-                        // 5 balas en abanico con separación de 5px entre sí
                         for (int i = -2; i <= 2; i++) {
                             Bala* Nueva = new Bala;
                             Nueva->x = jugador.x + i * 5;
@@ -910,7 +1191,6 @@ int main() {
                         break;
                     }
                     case PLASMA: {
-                        // Proyectil único más veloz (12 px/tick vs 8 normal)
                         Bala* Nueva = new Bala;
                         Nueva->x = jugador.x;
                         Nueva->y = jugador.y;
@@ -922,7 +1202,6 @@ int main() {
                         break;
                     }
                     case MISSILE: {
-                        // Misil con homing — su movimiento se procesa en el loop
                         Missile* Nuevo = new Missile;
                         Nuevo->x = jugador.x;
                         Nuevo->y = jugador.y;
@@ -931,7 +1210,6 @@ int main() {
                         break;
                     }
                     case BOTS: {
-                        // Primera activación: crear los 4 drones en offsets fijos
                         if (bots == NULL) {
                             float offsets[4][2] = { {-20,-20},{20,-20},{-20,20},{20,20} };
                             for (int i = 0; i < 4; i++) {
@@ -942,7 +1220,6 @@ int main() {
                                 AgregarBot(bots, NuevoBot);
                             }
                         }
-                        // Disparar una bala desde la posición de cada drone
                         Bot* AuxBot = bots;
                         while (AuxBot != NULL) {
                             Bala* Nueva = new Bala;
@@ -957,35 +1234,54 @@ int main() {
                         }
                         break;
                     }
-                    default:
-                        // IMPLOSION y VELOCITY no se activan con ESPACIO:
-                        // IMPLOSION es pasivo (siempre activo al estar seleccionado)
-                        // VELOCITY se dibuja y evalúa en la sección de renderizado
-                        break;
+                    default: break;
                     }
                 }
             }
         }
 
         // =====================================================================
+        //  ESTADO: TRANSICION
+        //  Pantalla breve (3 segundos = 180 ticks) que muestra el nombre
+        //  del nivel siguiente antes de continuar.
+        //  No requiere input — avanza automáticamente.
+        // =====================================================================
+        else if (estado == TRANSICION) {
+            if (ev.type == ALLEGRO_EVENT_TIMER) {
+                tickTransicion++;
+                if (tickTransicion >= 180) {  // 3 segundos a 60 FPS
+                    tickTransicion = 0;
+                    estado = JUGANDO;
+                }
+            }
+        }
+
+        // =====================================================================
         //  ESTADO: GAME_OVER
-        //  Muestra la pantalla de fin de partida.
-        //  ENTER reinicia todos los contadores y vuelve al MENU.
         // =====================================================================
         else if (estado == GAME_OVER) {
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN && ev.keyboard.keycode == ALLEGRO_KEY_ENTER) {
-                // Reiniciar estado del jugador
                 jugador.vidas = 3;
+                jugador.x = WIDTH / 2;
+                jugador.y = HEIGHT - 50;
                 score = 0;
                 disparos = aciertos = fallos = 0;
 
-                // Liberar toda la memoria dinámica de las listas
+                nivelActual = CITY;
+                enemigosEliminados = 0;
+                umbralNivel = obtenerUmbral(CITY);
+                jefePendiente = false;
+                jefeVivo = false;
+                cheatInvencible = false;
+                cheatFastKill = false;
+
                 DestruirEnemigos(enemigos);
                 DestruirBalas(balas);
                 DestruirBalasEnemigas(balasEnemigas);
                 DestruirMonedas(monedas);
                 DestruirMissiles(misiles);
                 DestruirBots(bots);
+                DestruirJefes(jefes);
 
                 estado = MENU;
             }
@@ -993,8 +1289,6 @@ int main() {
 
         // =====================================================================
         //  ESTADO: STATS
-        //  Pantalla informativa simple. ESC regresa al menú.
-        //  NOTA: en la versión final mostrará el Top Scores del BST directamente.
         // =====================================================================
         else if (estado == STATS) {
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN && ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
@@ -1003,51 +1297,105 @@ int main() {
 
         // =====================================================================
         //  RENDERIZADO
-        //  Solo se dibuja cuando:
-        //    a) redraw == true  (hubo un tick de timer)
-        //    b) la cola de eventos está vacía (no hay más eventos pendientes)
-        //  Esto evita dibujar frames intermedios y desacopla lógica de render.
         // =====================================================================
         if (redraw && al_is_event_queue_empty(queue)) {
             redraw = false;
-            al_clear_to_color(al_map_rgb(0, 0, 0)); // Fondo negro cada frame
+            al_clear_to_color(al_map_rgb(0, 0, 0));
 
             // ── Renderizado: MENU ──────────────────────────────────────────
             if (estado == MENU) {
-                al_draw_text(font, al_map_rgb(255, 255, 255), WIDTH / 2, HEIGHT / 2 - 60, ALLEGRO_ALIGN_CENTER, "ENTER jugar | S stats");
-                al_draw_textf(font, al_map_rgb(255, 255, 255), WIDTH / 2, HEIGHT / 2 - 20, ALLEGRO_ALIGN_CENTER, "Dificultad: %s", nombresDif[(int)dificultad]);
-                al_draw_textf(font, al_map_rgb(255, 255, 255), WIDTH / 2, HEIGHT / 2 + 20, ALLEGRO_ALIGN_CENTER, "Modo: %s", nombresModo[modo]);
+                if (editandoNombre) {
+                    al_draw_text(font, al_map_rgb(255, 255, 0),
+                        WIDTH / 2, HEIGHT / 2 - 80,
+                        ALLEGRO_ALIGN_CENTER, "INGRESA TU NOMBRE:");
+                    for (int i = 0; i < 5; i++) {
+                        ALLEGRO_COLOR c = (i == letraNombre)
+                            ? al_map_rgb(0, 255, 255)
+                            : al_map_rgb(255, 255, 255);
+                        al_draw_textf(font, c, WIDTH / 2 - 20 + i * 10, HEIGHT / 2 - 40, 0, "%c", nombreJugador[i]);
+                    }
+                    al_draw_text(font, al_map_rgb(150, 150, 150),
+                        WIDTH / 2, HEIGHT / 2,
+                        ALLEGRO_ALIGN_CENTER, "UP/DOWN letra  LEFT/RIGHT mover  ENTER confirmar");
+                }
+                else {
+                    al_draw_textf(font, al_map_rgb(0, 255, 255),
+                        WIDTH / 2, HEIGHT / 2 - 100,
+                        ALLEGRO_ALIGN_CENTER, "Jugador: %s", nombreJugador);
+                    al_draw_text(font, al_map_rgb(255, 255, 0),
+                        WIDTH / 2, HEIGHT / 2 - 70,
+                        ALLEGRO_ALIGN_CENTER, "XOP");
+                    al_draw_text(font, al_map_rgb(255, 255, 255),
+                        WIDTH / 2, HEIGHT / 2 - 40,
+                        ALLEGRO_ALIGN_CENTER, "ENTER = Seleccion libre  |  SPACE = Modo Arcade");
+                    al_draw_text(font, al_map_rgb(255, 255, 255),
+                        WIDTH / 2, HEIGHT / 2 - 20,
+                        ALLEGRO_ALIGN_CENTER, "S = Stats  |  N = Nombre");
+                    al_draw_textf(font, al_map_rgb(200, 200, 200),
+                        WIDTH / 2, HEIGHT / 2 + 10,
+                        ALLEGRO_ALIGN_CENTER, "Dificultad (sel. libre): %s", nombresDif[(int)dificultad]);
+                    al_draw_textf(font, al_map_rgb(200, 200, 200),
+                        WIDTH / 2, HEIGHT / 2 + 30,
+                        ALLEGRO_ALIGN_CENTER, "Modo (sel. libre): %s", nombresModo[modo]);
+                }
             }
 
             // ── Renderizado: JUGANDO ───────────────────────────────────────
             else if (estado == JUGANDO) {
 
-                // HUD: información en pantalla
+                // HUD
                 al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 10, 0, "Score: %d", score);
                 al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 30, 0, "Vidas: %d", jugador.vidas);
                 al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 50, 0, "Arma: %s", nombresArma[armaActual]);
+                al_draw_textf(font, al_map_rgb(0, 255, 255), 10, 70, 0, "Jugador: %s", nombreJugador);
+                al_draw_textf(font, al_map_rgb(200, 200, 200), 10, 90, 0, "Nivel: %s",
+                    nivelActual == CITY ? "CITY" :
+                    nivelActual == OCEAN ? "OCEAN" :
+                    nivelActual == VOLCANO ? "VOLCANO" : "SPACE");
+                al_draw_textf(font, al_map_rgb(200, 200, 200), 10, 110, 0,
+                    "Enemigos: %d/%d", enemigosEliminados, umbralNivel);
 
-                // Nave del jugador: rectángulo verde 20×20 px
+                // Indicadores de cheats activos
+                if (cheatInvencible)
+                    al_draw_text(font, al_map_rgb(255, 50, 50),
+                        WIDTH - 10, 10, ALLEGRO_ALIGN_RIGHT, "[INV]");
+                if (cheatFastKill)
+                    al_draw_text(font, al_map_rgb(255, 50, 50),
+                        WIDTH - 10, 30, ALLEGRO_ALIGN_RIGHT, "[FK]");
+
+                // Barra de vida del jefe
+                if (jefeVivo && jefes != NULL) {
+                    int vidaMax = 10;
+                    int vidaAct = jefes->vida;
+                    float barW = 300.0f;
+                    float barX = (WIDTH - barW) / 2;
+                    float barY = HEIGHT - 20;
+                    al_draw_filled_rectangle(barX, barY, barX + barW, barY + 12, al_map_rgb(80, 0, 0));
+                    al_draw_filled_rectangle(barX, barY, barX + barW * vidaAct / vidaMax, barY + 12, al_map_rgb(220, 0, 0));
+                    al_draw_text(font, al_map_rgb(255, 255, 255),
+                        WIDTH / 2, barY - 14, ALLEGRO_ALIGN_CENTER, "JEFE");
+                }
+
+                // Nave del jugador: rectángulo verde
                 al_draw_filled_rectangle(jugador.x - 10, jugador.y - 10,
                     jugador.x + 10, jugador.y + 10,
                     al_map_rgb(0, 255, 0));
 
-                // ── Renderizado de balas del jugador ──────────────────────
+                // Balas del jugador
                 {
                     Bala* Aux = balas;
                     while (Aux != NULL) {
                         if (Aux->tipo == 2) {
-                            // PLASMA: doble círculo para efecto de destello
                             al_draw_filled_circle(Aux->x, Aux->y, 6, al_map_rgba(0, 255, 0, 120));
                             al_draw_filled_circle(Aux->x, Aux->y, 3, al_map_rgba(200, 255, 200, 220));
                         }
                         else {
                             ALLEGRO_COLOR color;
                             switch (Aux->tipo) {
-                            case 0: color = al_map_rgb(255, 255, 0); break; // Normal: amarillo
-                            case 1: color = al_map_rgb(255, 0, 0); break; // Spread: rojo
-                            case 3: color = al_map_rgb(0, 255, 255); break; // Bots: cian
-                            default:color = al_map_rgb(255, 255, 255); // Otros: blanco
+                            case 0: color = al_map_rgb(255, 255, 0); break;
+                            case 1: color = al_map_rgb(255, 0, 0); break;
+                            case 3: color = al_map_rgb(0, 255, 255); break;
+                            default:color = al_map_rgb(255, 255, 255);
                             }
                             al_draw_filled_circle(Aux->x, Aux->y, 3, color);
                         }
@@ -1055,32 +1403,52 @@ int main() {
                     }
                 }
 
-                // Balas enemigas: círculo cian
+                // Balas enemigas (tipo 4 = bala grande naranja)
                 {
                     Bala* Aux = balasEnemigas;
                     while (Aux != NULL) {
-                        al_draw_filled_circle(Aux->x, Aux->y, 3, al_map_rgb(0, 255, 255));
+                        if (Aux->tipo == 4)
+                            al_draw_filled_circle(Aux->x, Aux->y, 6, al_map_rgb(255, 140, 0));
+                        else
+                            al_draw_filled_circle(Aux->x, Aux->y, 3, al_map_rgb(0, 255, 255));
                         Aux = Aux->siguiente;
                     }
                 }
 
-                // Enemigos: rectángulo rojo 20×20 px
+                // Enemigos
                 {
                     Enemigo* Aux = enemigos;
                     while (Aux != NULL) {
-                        Enemigo* Siguiente = Aux->siguiente;  // guardar antes de posible eliminación
+                        Enemigo* Siguiente = Aux->siguiente;
                         al_draw_filled_rectangle(Aux->x - 10, Aux->y - 10,
                             Aux->x + 10, Aux->y + 10,
                             al_map_rgb(255, 0, 0));
                         if (colision(jugador.x, jugador.y, Aux->x, Aux->y, 15)) {
-                            jugador.vidas--;
+                            if (cheatInvencible) jugador.vidas++;
+                            else                 jugador.vidas--;
                             EliminarEnemigo(enemigos, Aux);
                         }
-                        Aux = Siguiente;  // avanzar con el puntero guardado
+                        Aux = Siguiente;
                     }
                 }
 
-                // Monedas: círculo azul pequeño (radio 4px)
+                // Jefe: rectángulo grande morado
+                {
+                    Jefe* Aux = jefes;
+                    while (Aux != NULL) {
+                        al_draw_filled_rectangle(Aux->x - 40, Aux->y - 25,
+                            Aux->x + 40, Aux->y + 25,
+                            al_map_rgb(180, 0, 220));
+                        // Indicador de fase
+                        if (Aux->fase == 2)
+                            al_draw_filled_rectangle(Aux->x - 40, Aux->y - 25,
+                                Aux->x + 40, Aux->y + 25,
+                                al_map_rgb(220, 0, 100));
+                        Aux = Aux->siguiente;
+                    }
+                }
+
+                // Monedas
                 {
                     Moneda* Aux = monedas;
                     while (Aux != NULL) {
@@ -1089,7 +1457,7 @@ int main() {
                     }
                 }
 
-                // Misiles: círculo magenta
+                // Misiles
                 {
                     Missile* Aux = misiles;
                     while (Aux != NULL) {
@@ -1098,7 +1466,7 @@ int main() {
                     }
                 }
 
-                // Drones BOTS: círculo cian en posición offset del jugador
+                // Drones BOTS
                 {
                     Bot* Aux = bots;
                     while (Aux != NULL) {
@@ -1107,11 +1475,7 @@ int main() {
                     }
                 }
 
-                // ── Lógica y render especial: VELOCITY CANNON ─────────────
-                // Dibuja un rayo blanco vertical desde el jugador hasta la cima.
-                // Elimina instantáneamente cualquier enemigo alineado (±10px en X).
-                // NOTA: la lógica de eliminación está aquí dentro del render,
-                // lo cual mezcla responsabilidades — a refactorizar en versión final.
+                // VELOCITY CANNON
                 if (armaActual == VELOCITY) {
                     al_draw_line(jugador.x, jugador.y, jugador.x, 0, al_map_rgb(255, 255, 255), 3);
                     Enemigo* Aux = enemigos;
@@ -1119,6 +1483,7 @@ int main() {
                         Enemigo* Siguiente = Aux->siguiente;
                         if (fabs(Aux->x - jugador.x) < 10) {
                             score += 20;
+                            enemigosEliminados += (cheatFastKill ? 10 : 1);
                             EliminarEnemigo(enemigos, Aux);
                         }
                         Aux = Siguiente;
@@ -1126,36 +1491,70 @@ int main() {
                 }
             }
 
+            // ── Renderizado: TRANSICION ──────────────────────────────
+            else if (estado == TRANSICION) {
+                const char* nombreNivel =
+                    nivelActual == CITY ? "CITY — Easy" :
+                    nivelActual == OCEAN ? "OCEAN — Medium" :
+                    nivelActual == VOLCANO ? "VOLCANO — Hard" : "SPACE — Maniac";
+
+                al_draw_text(font, al_map_rgb(255, 255, 0),
+                    WIDTH / 2, HEIGHT / 2 - 20,
+                    ALLEGRO_ALIGN_CENTER, "NIVEL COMPLETADO");
+                al_draw_textf(font, al_map_rgb(255, 255, 255),
+                    WIDTH / 2, HEIGHT / 2 + 10,
+                    ALLEGRO_ALIGN_CENTER, "Siguiente: %s", nombreNivel);
+            }
+
             // ── Renderizado: GAME_OVER ─────────────────────────────────────
             else if (estado == GAME_OVER) {
                 al_draw_text(font, al_map_rgb(255, 0, 0),
-                    WIDTH / 2, HEIGHT / 2,
+                    WIDTH / 2, HEIGHT / 2 - 40,
                     ALLEGRO_ALIGN_CENTER, "GAME OVER");
+                al_draw_textf(font, al_map_rgb(255, 255, 255),
+                    WIDTH / 2, HEIGHT / 2,
+                    ALLEGRO_ALIGN_CENTER, "Jugador: %s  |  Score: %d", nombreJugador, score);
+                al_draw_textf(font, al_map_rgb(150, 150, 150),
+                    WIDTH / 2, HEIGHT / 2 + 30,
+                    ALLEGRO_ALIGN_CENTER, "D:%d  A:%d  F:%d", disparos, aciertos, fallos);
+                al_draw_text(font, al_map_rgb(255, 255, 255),
+                    WIDTH / 2, HEIGHT / 2 + 60,
+                    ALLEGRO_ALIGN_CENTER, "ENTER para volver al menu");
             }
 
             // ── Renderizado: STATS ─────────────────────────────────────────
             else if (estado == STATS) {
-                al_draw_text(font, al_map_rgb(255, 255, 255),
-                    WIDTH / 2, HEIGHT / 2,
-                    ALLEGRO_ALIGN_CENTER, "Revisa stats.txt");
+                al_draw_text(font, al_map_rgb(255, 255, 0),
+                    WIDTH / 2, 20, ALLEGRO_ALIGN_CENTER, "TOP SCORES");
+                al_draw_text(font, al_map_rgb(150, 150, 150),
+                    WIDTH / 2, 40, ALLEGRO_ALIGN_CENTER, "ESC para volver");
+                if (raizBST == NULL) {
+                    al_draw_text(font, al_map_rgb(150, 150, 150),
+                        WIDTH / 2, HEIGHT / 2,
+                        ALLEGRO_ALIGN_CENTER, "Sin partidas registradas aun");
+                }
+                else {
+                    int y = 80;
+                    int lugar = 1;
+                    MostrarTopScores(raizBST, font, y, lugar, 10);
+                }
             }
 
-            // Intercambiar buffers: muestra el frame dibujado en pantalla
             al_flip_display();
         }
 
     } // ── FIN DEL GAME LOOP ────────────────────────────────────────────────
 
     // ── Limpieza de recursos al salir ─────────────────────────────────────────
-    // Liberar toda la memoria dinámica de las listas enlazadas
+    DestruirBST(raizBST);
     DestruirBalas(balas);
     DestruirBalasEnemigas(balasEnemigas);
     DestruirEnemigos(enemigos);
     DestruirMonedas(monedas);
     DestruirMissiles(misiles);
     DestruirBots(bots);
+    DestruirJefes(jefes);
 
-    // Liberar recursos de Allegro en orden inverso a la creación
     al_destroy_display(display);
     al_destroy_timer(timer);
     al_destroy_event_queue(queue);

@@ -1,9 +1,42 @@
-﻿// PROYECTO 1A — VIDEOJUEGO XOP
-// Curso: Estructuras de Datos IC2001
-// Réplica del bullet hell XOP usando Allegro 5. Implementa nave del jugador,
-// enemigos, 6 armas secundarias, DAL Coins, sistema de niveles con modo arcade
-// e infinito, jefes, Reflect Shield, Velocity Cannon con cooldown,
-// estadísticas persistentes en BST con identificador de modo, y sprites.
+﻿// ###################################################################################### //
+// # Elaborado por: 																	# //
+// # - Elías Lizano Valerio  - 2025071179												# //
+// # - Patrick Gatjens Gomez - 2025094172												# //
+// # - Andres Hidalgo Vargas - 2025079244												# //
+// # Fecha de creación: 00/00/2026 - 00:00 p.m.											# //
+// # Ultima modificación: 00/00/2026 - 00:00 p.m.										# //
+// ###################################################################################### //
+/*
+
+// ------------------------------------------------------------------------ //
+// ------------------------- Arquitectura General ------------------------- //
+// ------------------------------------------------------------------------ //
+
+El programa se organiza mediante:
+- Enumeraciones para estados y configuraciones.
+- Structs para entidades del juego.
+- Listas enlazadas para objetos dinamicos.
+- Arbol binario de busqueda para almacenar rankings persistentes.
+- Game loop basado en eventos de Allegro.
+
+// ----------------------------------------------------------------------------------- //
+// ------------------------- Estructuras de Datos Utilizadas ------------------------- //
+// ----------------------------------------------------------------------------------- //
+
+1. Listas enlazadas:
+   - Balas
+   - Enemigos
+   - Monedas
+   - Bots
+   - Misiles
+   - Jefes
+   - Explosiones
+
+2. Arbol Binario de Busqueda:
+   - Almacena puntuaciones.
+   - Ordenado por score.
+   - Persistencia mediante archivo binario.
+*/
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -23,7 +56,12 @@ const int   WIDTH = 1024;
 const int   HEIGHT = 768;
 const float FPS = 60;
 
-// --- Enumeraciones ---
+// ----------------------------------------------------------------- //
+// ------------------------- ENUMERACIONES ------------------------- //
+// ----------------------------------------------------------------- //
+
+// Las enumeraciones definen estados y configuraciones globales del juego, en palabras mas 
+// simples son las opciones, modos de juego, dificultades, niveles y armas que se usan.
 
 enum EstadoJuego { MENU, JUGANDO, GAME_OVER, STATS, TRANSICION };
 enum Nivel { CITY, OCEAN, VOLCANO, SPACE };
@@ -43,6 +81,14 @@ enum Arma { ARMA_NORMAL, BOTS, VELOCITY, SPREAD, MISSILE, IMPLOSION, PLASMA };
 
 // 'hit' evita contar fallos dobles. 'tipo' define sprite/color.
 // 'velX' permite dispersión horizontal; 0 en balas rectas.
+
+// ------------------------------------------------------------------------ //
+// ------------------------- STRUCTS DE ENTIDADES ------------------------- //
+// ------------------------------------------------------------------------ //
+
+// Representan los distintos objetos dinamicos del videojuego, con esto nos referimos a todo aquello 
+// que tiene un estado cambiante en el mismo, y que se crea o modifica en tiempo de ejecución
+
 struct Bala {
     float x, y, vel, velX;
     bool hit;
@@ -96,7 +142,14 @@ struct Explosion {
     Explosion* siguiente;
 };
 
-// --- Sistema de assets ---
+// --------------------------------------------------------------------- //
+// ------------------------- SISTEMA DE ASSETS ------------------------- //
+// --------------------------------------------------------------------- //
+
+// Centraliza todos los recursos graficos reutilizables, en palabras menos 
+// tecnicas, es todo lo que es la GUI y gran parte de los bitMaps de allegro.
+// Incluye los nuevos indicadores de Velocity Cannon: vcOn y vcOff.
+
 // Todos los bitmaps se cargan una vez al inicio y se reutilizan en cada frame.
 struct Assets {
     // Backgrounds
@@ -136,7 +189,7 @@ struct Assets {
     ALLEGRO_BITMAP* reflectShield; // 74x70
 };
 
-// --- Anim2 ---
+// ----- Anim2 ----- //
 // Animación de 2 frames en loop. ticksPorFrame=15 → ~4 ciclos/seg a 60 FPS.
 struct Anim2 { int frame, tick, ticksPorFrame; };
 
@@ -207,11 +260,18 @@ void DestruirAssets(Assets& a) {
     for (int i = 0; i < 7; i++) al_destroy_bitmap(a.explosion[i]);
 }
 
-// --- Variables globales de estadísticas ---
+// ---------------------------------------------------------------------- //
+// ------------------------- VARIABLES GLOBALES ------------------------- //
+// ---------------------------------------------------------------------- //
 
 int disparos = 0, aciertos = 0, fallos = 0, score = 0;
 
-// --- Configuración de dificultad ---
+// ------------------------------------------------------------------------------- //
+// ------------------------- CONFIGURACION DE DIFICULTAD ------------------------- //
+// ------------------------------------------------------------------------------- //
+
+// Esta parte ajusta velocidad, spawn y agresividad del juego.
+
 // spawnRate: cada cuántos ticks aparece un enemigo (menor = más frecuente)
 // velEnemigo / velBala: velocidades en px/tick
 
@@ -226,21 +286,21 @@ const char* nombresDif[] = { "EASIEST","EASY","NORMAL","HARD","VERY HARD","EXTRE
 const char* nombresModo[] = { "ORIGINAL","SLUDGE","MANIAC","MASSACRE" };
 const char* nombresArma[] = { "NORMAL","BOTS","VELOCITY","SPREAD","MISSILE","IMPLOSION","PLASMA" };
 
-// --- colision ---
+// ----- colision ----- //
 // AABB simplificada (caja cuadrada de lado 2r).
 // Aproximación suficiente para bullet hell 2D; hitbox real sería euclídea.
 bool colision(float x1, float y1, float x2, float y2, float r) {
     return (fabs(x1 - x2) < r && fabs(y1 - y2) < r);
 }
 
-// --- obtenerUmbral ---
+// ----- obtenerUmbral ----- //
 // Arcade: 50 en City/Ocean, 64 en Volcano/Space. Modo libre: siempre 50.
 int obtenerUmbral(Nivel n) {
     if (n == CITY || n == OCEAN) return 50;
     return 64;
 }
 
-// --- patronPorDificultad ---
+// ----- patronPorDificultad ----- //
 // Retorna índice de patrón de disparo para modo selección libre.
 // 0=simple, 1=ráfaga, 2=abanico3, 3=abanico5
 int patronPorDificultad(Dificultad d) {
@@ -250,7 +310,12 @@ int patronPorDificultad(Dificultad d) {
     return 3;
 }
 
-// --- Funciones de lista enlazada ---
+// --------------------------------------------------------------------------------- //
+// ------------------------- FUNCIONES DE LISTAS ENLAZADAS ------------------------- //
+// --------------------------------------------------------------------------------- //
+
+// Manejan insercion, eliminacion y destruccion dinamica para cada una de las 8 listas que usamos.
+
 // Patrón reutilizado de AgregarInicioInventario / DestruirInventario del laboratorio.
 // Cada entidad tiene: Agregar (O(1) al frente), Eliminar (reconecta antes de liberar), Destruir.
 
@@ -359,11 +424,18 @@ void DestruirExplosiones(Explosion*& Lista) {
     while (Aux != NULL) { Lista = Lista->siguiente; delete Aux; Aux = Lista; }
 }
 
-// --- BST de estadísticas ---
+// ----------------------------------------------------------------------- //
+// ------------------------- BST DE ESTADISTICAS ------------------------- //
+// ----------------------------------------------------------------------- //
+
+// Almacena scores persistentes ordenados por puntuacion, ergo, este es el arbol binario de busqueda, 
+// en el que mediante se crea la partida, se ingresan los datos de la misma al concluirla.
+// El campo 'arcade' identifica si la partida fue en modo arcade (true) o seleccion libre (false).
+// MostrarTopScores usa color amarillo para partidas arcade [A] y cian para seleccion libre [L].
+
 // Historial acumulativo de partidas ordenado por score.
 // No se permite eliminar nodos. Basado en funciones del laboratorio de árboles.
 // 'arcade' identifica si la partida fue en modo arcade o selección libre.
-
 struct NodoBST {
     char nombre[6]; // 5 caracteres estilo arcade + '\0'
     int disparos, aciertos, fallos, score;
@@ -443,10 +515,18 @@ void CargarBST(NodoBST*& Raiz) {
     fclose(archivo);
 }
 
+// ---------------------------------------------------------------------------- //
+// ---------------------------------------------------------------------------- //
+// ------------------------- FUNCION PRINCIPAL (Main) ------------------------- //
+// ---------------------------------------------------------------------------- //
+// ---------------------------------------------------------------------------- //
+
+// Contiene inicializacion, game loop y control general de todo el programa,
+// es muy grande porque esta misma se encarga de manejar todo.
 
 int main() {
 
-    // --- Inicialización de Allegro ---
+    // ----- Inicialización de Allegro ----- //
     al_init();
     al_install_keyboard();
     al_init_primitives_addon();
@@ -464,18 +544,18 @@ int main() {
     al_register_event_source(queue, al_get_timer_event_source(timer));
     al_register_event_source(queue, al_get_keyboard_event_source());
 
-    // --- Carga de assets ---
+    // ----- Carga de assets ----- //
     Assets assets;
     CargarAssets(assets);
 
-    // --- Animaciones globales ---
+    // ----- Animaciones globales ----- //
     // ticksPorFrame=15: cicla ~4 veces/seg a 60 FPS. Boss anima más rápido.
     Anim2 animPlayer = { 0, 0, 15 };
     Anim2 animEnemie = { 0, 0, 15 };
     Anim2 animBoss = { 0, 0, 10 };
     Anim2 animDron = { 0, 0, 15 };
 
-    // --- Estado inicial ---
+    // ----- Estado inicial ----- //
     EstadoJuego estado = MENU;
     Dificultad  dificultad = DIF_NORMAL;
     ModoJuego   modo = ORIGINAL;
@@ -491,7 +571,7 @@ int main() {
     NodoBST* raizBST = NULL;
     CargarBST(raizBST);
 
-    // --- Listas de entidades ---
+    // ----- Listas de entidades ----- //
     Bala* balas = NULL;
     Bala* balasEnemigas = NULL;
     Enemigo* enemigos = NULL;
@@ -501,7 +581,7 @@ int main() {
     Jefe* jefes = NULL;
     Explosion* explosiones = NULL;
 
-    // --- Sistema de niveles ---
+    // ----- Sistema de niveles ----- //
     // modoArcade: true=4 niveles consecutivos, false=modo libre infinito
     // tickTransicion: cuenta ticks en TRANSICION (180 = 3 segundos a 60 FPS)
     bool  modoArcade = true;
@@ -512,7 +592,7 @@ int main() {
     bool  jefeVivo = false;
     int   tickTransicion = 0;
 
-    // --- Reflect Shield ---
+    // ----- Reflect Shield ----- //
     // rsDisponible: el jugador tiene un RS listo para usar (tecla R)
     // rsActivo: la onda está expandiéndose actualmente
     // rsRadio: radio actual de la onda en px (crece hasta RS_RADIO_MAX)
@@ -524,13 +604,17 @@ int main() {
     const int   RS_TICKS_MAX = 30;
     int   rsTick = 0;
 
+
+    // ----- Velocity Cannon ----- //
+    // velocityTicks: ticks activos (max 180 = 3 seg). Al agotarse fuerza ARMA_NORMAL e inicia cooldown.
+    // velocityCooldown: ticks restantes de cooldown (max 1200 = 20 seg). Mientras > 0 bloquea el arma.
     // --- Velocity Cannon ---
     // velocityTicks: ticks activos (max 180 = 3 seg). Al agotarse o cambiar arma inicia cooldown.
     // velocityCooldown: ticks restantes de cooldown (max 1200 = 20 seg).
     int velocityTicks = 0;
     int velocityCooldown = 0;
 
-    // --- Dev menu ---
+    // ----- Dev menu ----- //
     // CTRL+I: invencibilidad (golpes suman vida). CTRL+F: fast kill (cuenta x10).
     // Solo activos en estado JUGANDO.
     bool cheatInvencible = false;
@@ -543,13 +627,17 @@ int main() {
     bool running = true;
     bool redraw = true;
 
-    // --- Game loop principal ---
+    // ----- Game loop principal ----- //
     // Cola de eventos Allegro 5: TIMER dispara lógica a 60 UPS.
     // Renderizado solo cuando redraw=true y la cola está vacía.
     while (running) {
         ALLEGRO_EVENT ev;
         al_wait_for_event(queue, &ev);
 
+
+        // ----- Cierre de ventana ----- //
+        // Si se cierra mientras se juega en modo libre con score > 0,
+        // la partida incompleta se guarda en el BST antes de salir.
         if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
             // Guardar partida incompleta si se estaba jugando en modo libre
             if (estado == JUGANDO && !modoArcade && score > 0) {
@@ -561,7 +649,7 @@ int main() {
         }
         if (ev.type == ALLEGRO_EVENT_TIMER) redraw = true;
 
-        // --- MENU ---
+        // ----- MENU ----- //
         // ENTER=selección libre, SPACE=modo arcade, S=stats, N=nombre
         // En edición de nombre: UP/DOWN=letra, LEFT/RIGHT=cursor, ENTER=confirmar
         if (estado == MENU) {
@@ -616,7 +704,7 @@ int main() {
             }
         }
 
-        // --- JUGANDO ---
+        // ----- JUGANDO ----- //
         else if (estado == JUGANDO) {
 
             ConfigDificultad cfg = configs[dificultad];
@@ -631,13 +719,13 @@ int main() {
 
                 al_get_keyboard_state(&keystate);
 
-                // --- Actualizar animaciones ---
+                // ----- Actualizar animaciones ----- //
                 ActualizarAnim2(animPlayer);
                 ActualizarAnim2(animEnemie);
                 ActualizarAnim2(animBoss);
                 ActualizarAnim2(animDron);
 
-                // --- Actualizar Reflect Shield ---
+                // ----- Actualizar Reflect Shield ----- //
                 // La onda crece linealmente hasta RS_RADIO_MAX en RS_TICKS_MAX ticks.
                 if (rsActivo) {
                     rsTick++;
@@ -647,6 +735,11 @@ int main() {
                     }
                 }
 
+
+                // ----- Actualizar Velocity Cannon ----- //
+                // Al alcanzar 180 ticks activos (3 seg a 60 FPS) se fuerza ARMA_NORMAL
+                // y se inicia el cooldown de 1200 ticks (20 seg). Durante el cooldown
+                // la tecla 2 no puede activar el arma. El cooldown decrementa 1 por tick.
                 // --- Actualizar Velocity Cannon ---
                 // Al agotarse el tiempo activo se fuerza cambio de arma e inicia cooldown.
                 if (armaActual == VELOCITY && velocityCooldown == 0) {
@@ -659,7 +752,7 @@ int main() {
                 }
                 if (velocityCooldown > 0) velocityCooldown--;
 
-                // --- Movimiento del jugador ---
+                // ----- Movimiento del jugador ----- //
                 if (al_key_down(&keystate, ALLEGRO_KEY_LEFT))  jugador.x -= jugador.vel;
                 if (al_key_down(&keystate, ALLEGRO_KEY_RIGHT)) jugador.x += jugador.vel;
                 if (al_key_down(&keystate, ALLEGRO_KEY_UP)) jugador.y -= jugador.vel;
@@ -667,7 +760,7 @@ int main() {
                 jugador.x = std::max(10.f, std::min((float)WIDTH - 10, jugador.x));
                 jugador.y = std::max(HEIGHT * 0.3f, std::min((float)HEIGHT - 10, jugador.y));
 
-                // --- Reflect Shield: convertir balas enemigas en balas del jugador ---
+                // ----- Reflect Shield: convertir balas enemigas en balas del jugador ---- //
                 // Balas dentro del radio de la onda activa se transfieren a 'balas'.
                 if (rsActivo) {
                     Bala* Aux = balasEnemigas;
@@ -691,7 +784,7 @@ int main() {
                     }
                 }
 
-                // --- Spawn de enemigos ---
+                // ----- Spawn de enemigos ----- //
                 // Suspendido mientras el jefe está pendiente o vivo.
                 if (!jefePendiente && !jefeVivo) {
                     if (rand() % cfg.spawnRate == 0) {
@@ -708,7 +801,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento de enemigos + patrones de disparo ---
+                // ----- Movimiento de enemigos + patrones de disparo ----- //
                 // Arcade: patrón según nivel. Libre: patrón según dificultad.
                 {
                     Enemigo* Aux = enemigos;
@@ -791,7 +884,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento del jefe ---
+                // ----- Movimiento del jefe ----- //
                 // Zigzag horizontal con rebote en bordes.
                 // Fase 1: 5 balas dispersion media. Fase 2: 7 balas mas rapidas.
                 {
@@ -822,7 +915,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento de balas del jugador ---
+                // ----- Movimiento de balas del jugador ----- //
                 {
                     Bala* Aux = balas;
                     while (Aux != NULL) {
@@ -834,7 +927,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento de balas enemigas ---
+                // ----- Movimiento de balas enemigas ----- //
                 // velX permite dispersion horizontal. Se eliminan al salir por cualquier borde.
                 {
                     Bala* Aux = balasEnemigas;
@@ -847,7 +940,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento de misiles ---
+                // ----- Movimiento de misiles ----- //
                 // Homing rudimentario: sigue al primer enemigo de la lista en X.
                 {
                     Missile* Aux = misiles;
@@ -863,7 +956,7 @@ int main() {
                     }
                 }
 
-                // --- Actualizacion de explosiones ---
+                // ----- Actualizacion de explosiones ----- //
                 // Avanza un frame cada 5 ticks. Se elimina al terminar el frame 7.
                 {
                     Explosion* Aux = explosiones;
@@ -879,7 +972,7 @@ int main() {
                     }
                 }
 
-                // --- Colisiones: balas del jugador vs enemigos ---
+                // ----- Colisiones: balas del jugador vs enemigos ----- //
                 {
                     Bala* AuxBala = balas;
                     while (AuxBala != NULL) {
@@ -916,7 +1009,7 @@ int main() {
                     }
                 }
 
-                // --- Colisiones: misiles vs enemigos ---
+                // ----- Colisiones: misiles vs enemigos ----- //
                 {
                     Missile* AuxMissile = misiles;
                     while (AuxMissile != NULL) {
@@ -947,7 +1040,7 @@ int main() {
                     }
                 }
 
-                // --- Colisiones: balas del jugador vs jefe ---
+                // ----- Colisiones: balas del jugador vs jefe ----- //
                 {
                     Bala* AuxBala = balas;
                     while (AuxBala != NULL) {
@@ -997,7 +1090,7 @@ int main() {
                     }
                 }
 
-                // --- Implosion ---
+                // ----- Implosion ----- //
                 // Campo pasivo: atrae enemigos dentro de radio 80px un 5% por tick.
                 if (armaActual == IMPLOSION) {
                     Enemigo* Aux = enemigos;
@@ -1010,7 +1103,7 @@ int main() {
                     }
                 }
 
-                // --- Movimiento de monedas + recolección ---
+                // ----- Movimiento de monedas + recolección ----- //
                 {
                     Moneda* Aux = monedas;
                     while (Aux != NULL) {
@@ -1026,7 +1119,7 @@ int main() {
                     }
                 }
 
-                // --- Colisiones: balas enemigas vs jugador ---
+                // ----- Colisiones: balas enemigas vs jugador ----- //
                 {
                     Bala* Aux = balasEnemigas;
                     while (Aux != NULL) {
@@ -1040,7 +1133,7 @@ int main() {
                     }
                 }
 
-                // --- Progresion de nivel (solo modo arcade) ---
+                // ----- Progresion de nivel (solo modo arcade) ----- //
                 if (modoArcade && !jefePendiente && !jefeVivo && enemigosEliminados >= umbralNivel) {
                     if (nivelActual == CITY || nivelActual == OCEAN) {
                         if (nivelActual == CITY) {
@@ -1068,7 +1161,7 @@ int main() {
                     }
                 }
 
-                // --- Progresion modo libre: jefe cada 50 eliminados ---
+                // ----- Progresion modo libre: jefe cada 50 eliminados ----- //
                 if (!modoArcade && !jefePendiente && !jefeVivo && enemigosEliminados >= 50) {
                     jefePendiente = true;
                     DestruirEnemigos(enemigos); DestruirBalasEnemigas(balasEnemigas);
@@ -1081,7 +1174,7 @@ int main() {
                     jefePendiente = false; jefeVivo = true;
                 }
 
-                // --- Transicion a GAME_OVER ---
+                // ----- Transicion a GAME_OVER ----- //
                 if (jugador.vidas <= 0) {
                     Insertar(raizBST, nombreJugador, disparos, aciertos, fallos, score, modoArcade);
                     FILE* archivo = fopen("stats.bin", "wb"); // "wb" sobreescribe — evita duplicados
@@ -1090,6 +1183,14 @@ int main() {
                 }
             }
 
+
+            // ----- Input: cheats, RS, Velocity y disparo ----- //
+            // CTRL+I: toggle invencibilidad. CTRL+F: toggle fast kill.
+            // R: activa Reflect Shield si disponible y no activo.
+            // Tecla 2: activa Velocity SOLO si velocityCooldown == 0.
+            //   Si se cambia arma mientras Velocity esta activa → cooldown inmediato.
+            // ESPACIO: dispara segun armaActual.
+            //   SPREAD actualizado: 5 balas con velX real {-2,-1,0,+1,+2} (dispersion angular).
             // --- Input: cheats, RS, Velocity y disparo ---
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
                 al_get_keyboard_state(&keystate);
@@ -1103,7 +1204,7 @@ int main() {
                     rsDisponible = false; rsActivo = true; rsRadio = 0.0f; rsTick = 0;
                 }
 
-                // Si se cambia de arma mientras Velocity está activa → iniciar cooldown
+                // Si se cambia de arma mientras Velocity está activa se inicia el cooldown
                 if (armaActual == VELOCITY && velocityCooldown == 0) {
                     if (ev.keyboard.keycode == ALLEGRO_KEY_0 || ev.keyboard.keycode == ALLEGRO_KEY_1 ||
                         ev.keyboard.keycode == ALLEGRO_KEY_3 || ev.keyboard.keycode == ALLEGRO_KEY_4 ||
@@ -1176,7 +1277,7 @@ int main() {
             }
         }
 
-        // --- TRANSICION ---
+        // ----- TRANSICION ----- //
         // Pantalla automatica de 3 segundos entre niveles, sin input requerido.
         else if (estado == TRANSICION) {
             if (ev.type == ALLEGRO_EVENT_TIMER) {
@@ -1185,7 +1286,7 @@ int main() {
             }
         }
 
-        // --- GAME OVER ---
+        // ----- GAME OVER ----- //
         else if (estado == GAME_OVER) {
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN && ev.keyboard.keycode == ALLEGRO_KEY_ENTER) {
                 jugador.vidas = 3; jugador.x = WIDTH / 2; jugador.y = HEIGHT - 50;
@@ -1204,19 +1305,19 @@ int main() {
             }
         }
 
-        // --- STATS ---
+        // ----- STATS ----- //
         else if (estado == STATS) {
             if (ev.type == ALLEGRO_EVENT_KEY_DOWN && ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
                 estado = MENU;
         }
 
-        // --- Renderizado ---
+        // ----- Renderizado ----- //
         // Solo cuando redraw=true y la cola está vacía — desacopla lógica del render.
         if (redraw && al_is_event_queue_empty(queue)) {
             redraw = false;
             al_clear_to_color(al_map_rgb(0, 0, 0));
 
-            // --- Render: MENU ---
+            // ----- Render: MENU ----- //
             if (estado == MENU) {
                 if (assets.bgMenu)
                     al_draw_scaled_bitmap(assets.bgMenu, 0, 0,
@@ -1249,7 +1350,7 @@ int main() {
                 }
             }
 
-            // --- Render: JUGANDO ---
+            // ----- Render: JUGANDO ----- //
             else if (estado == JUGANDO) {
 
                 // Fondo: modo libre usa supernova, arcade usa fondo del nivel activo
@@ -1479,7 +1580,7 @@ int main() {
                 }
             }
 
-            // --- Render: TRANSICION ---
+            // ----- Render: TRANSICION ----- //
             else if (estado == TRANSICION) {
                 const char* nombreNivel =
                     nivelActual == CITY ? "CITY — Easy" :
@@ -1491,7 +1592,7 @@ int main() {
                     WIDTH / 2, HEIGHT / 2 + 10, ALLEGRO_ALIGN_CENTER, "Siguiente: %s", nombreNivel);
             }
 
-            // --- Render: GAME_OVER ---
+            // ----- Render: GAME OVER ----- //
             else if (estado == GAME_OVER) {
                 al_draw_text(font, al_map_rgb(255, 0, 0),
                     WIDTH / 2, HEIGHT / 2 - 40, ALLEGRO_ALIGN_CENTER, "GAME OVER");
@@ -1505,7 +1606,7 @@ int main() {
                     WIDTH / 2, HEIGHT / 2 + 60, ALLEGRO_ALIGN_CENTER, "ENTER para volver al menu");
             }
 
-            // --- Render: STATS ---
+            // ----- Render: STATS ----- //
             // [A]=arcade (amarillo), [L]=seleccion libre (cian)
             else if (estado == STATS) {
                 if (assets.bgStats)
@@ -1528,9 +1629,9 @@ int main() {
             al_flip_display();
         }
 
-    } // --- Fin del game loop ---
+    }
 
-    // --- Limpieza ---
+    // ----- Limpieza ----- //
     DestruirAssets(assets);
     DestruirBST(raizBST);
     DestruirBalas(balas);

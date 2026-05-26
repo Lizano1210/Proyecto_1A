@@ -16,3 +16,5 @@ Release/
 
 # Allegro (si tienen DLLs locales)
 *.dll
+
+Proyecto_1A\Proyecto_1A\Assets/

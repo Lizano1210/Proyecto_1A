@@ -377,10 +377,13 @@ struct NodoBST {
 void Insertar(NodoBST*& Raiz, char nombre[6], int disparos, int aciertos, int fallos, int score, bool arcade) {
     if (Raiz == NULL) {
         Raiz = new NodoBST;
-        Raiz->disparos = disparos; Raiz->aciertos = aciertos;
-        Raiz->fallos = fallos;   Raiz->score = score;
+        Raiz->disparos = disparos;
+        Raiz->aciertos = aciertos;
+        Raiz->fallos = fallos;
+        Raiz->score = score;
         Raiz->arcade = arcade;
-        Raiz->izq = NULL;     Raiz->der = NULL;
+        Raiz->izq = NULL;
+        Raiz->der = NULL;
         for (int i = 0; i < 6; i++) Raiz->nombre[i] = nombre[i];
     }
     else {
@@ -1015,7 +1018,7 @@ int main() {
                         Aux->y += 2;
                         if (colision(jugador.x, jugador.y, Aux->x, Aux->y, 15)) {
                             if (Aux->tipo == 2) rsDisponible = true;
-                            else                score += (Aux->tipo == 0 ? 5 : 10);
+                            else score += (Aux->tipo == 0 ? 5 : 10);
                             EliminarMoneda(monedas, Aux);
                         }
                         else if (Aux->y > HEIGHT) EliminarMoneda(monedas, Aux);
@@ -1030,7 +1033,7 @@ int main() {
                         Bala* Siguiente = Aux->siguiente;
                         if (colision(jugador.x, jugador.y, Aux->x, Aux->y, 10)) {
                             if (cheatInvencible) jugador.vidas++;
-                            else                 jugador.vidas--;
+                            else jugador.vidas--;
                             EliminarBalaEnemiga(balasEnemigas, Aux);
                         }
                         Aux = Siguiente;
@@ -1193,10 +1196,10 @@ int main() {
                 rsDisponible = true; rsActivo = false; rsRadio = 0.0f; rsTick = 0;
                 velocityTicks = 0; velocityCooldown = 0; armaActual = ARMA_NORMAL;
                 cheatInvencible = false; cheatFastKill = false;
-                DestruirEnemigos(enemigos);           DestruirBalas(balas);
+                DestruirEnemigos(enemigos); DestruirBalas(balas);
                 DestruirBalasEnemigas(balasEnemigas); DestruirMonedas(monedas);
-                DestruirMissiles(misiles);            DestruirBots(bots);
-                DestruirJefes(jefes);                 DestruirExplosiones(explosiones);
+                DestruirMissiles(misiles); DestruirBots(bots);
+                DestruirJefes(jefes); DestruirExplosiones(explosiones);
                 estado = MENU;
             }
         }
@@ -1251,20 +1254,22 @@ int main() {
 
                 // Fondo: modo libre usa supernova, arcade usa fondo del nivel activo
                 if (!modoArcade) {
-                    if (assets.bgLibre)
+                    if (assets.bgLibre) {
                         al_draw_scaled_bitmap(assets.bgLibre, 0, 0,
                             al_get_bitmap_width(assets.bgLibre), al_get_bitmap_height(assets.bgLibre),
                             0, 0, WIDTH, HEIGHT, 0);
+                    }
                 }
                 else {
                     ALLEGRO_BITMAP* bg = NULL;
-                    if (nivelActual == CITY)    bg = assets.bgCity;
-                    else if (nivelActual == OCEAN)   bg = assets.bgOcean;
+                    if (nivelActual == CITY) bg = assets.bgCity;
+                    else if (nivelActual == OCEAN) bg = assets.bgOcean;
                     else if (nivelActual == VOLCANO) bg = assets.bgVolcano;
-                    else                             bg = assets.bgSpace;
-                    if (bg)
+                    else  bg = assets.bgSpace;
+                    if (bg) {
                         al_draw_scaled_bitmap(bg, 0, 0,
                             al_get_bitmap_width(bg), al_get_bitmap_height(bg), 0, 0, WIDTH, HEIGHT, 0);
+                    }
                 }
 
                 // HUD: score con asset + numero a la derecha
@@ -1355,7 +1360,7 @@ int main() {
                             if (Aux->tipo == 0) color = al_map_rgb(255, 255, 0);
                             else if (Aux->tipo == 1) color = al_map_rgb(255, 0, 0);
                             else if (Aux->tipo == 3) color = al_map_rgb(0, 255, 255);
-                            else                     color = al_map_rgb(255, 255, 255);
+                            else color = al_map_rgb(255, 255, 255);
                             al_draw_filled_circle(Aux->x, Aux->y, 3, color);
                         }
                         Aux = Aux->siguiente;
